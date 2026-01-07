@@ -1,0 +1,85 @@
+[2m2025-11-04T11:03:04.292747Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Avvio server Ruggine...
+[2m2025-11-04T11:03:04.330817Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Database inizializzato.
+[2m2025-11-04T11:03:04.332033Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Server WebSocket in ascolto su 127.0.0.1:4000
+[2m2025-11-04T11:03:04.647881Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m CPU usage: 13.34%
+[2m2025-11-04T11:03:14.644717Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m CPU usage: 5.89%
+[2m2025-11-04T11:03:24.651334Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m CPU usage: 7.37%
+[2m2025-11-04T11:03:27.587408Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Nuova connessione da: 127.0.0.1:52973
+[2m2025-11-04T11:03:34.649658Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m CPU usage: 4.82%
+[2m2025-11-04T11:03:36.443010Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Nuovo utente registrato: omar (ID: 1)
+[2m2025-11-04T11:03:44.649467Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m CPU usage: 3.65%
+[2m2025-11-04T11:03:48.495254Z[0m [33m WARN[0m [2mruggine_server[0m[2m:[0m Errore nell'elaborare messaggio: Già registrato.
+[2m2025-11-04T11:03:54.640803Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m CPU usage: 3.24%
+[2m2025-11-04T11:04:04.648171Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m CPU usage: 3.00%
+[2m2025-11-04T11:04:14.637980Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m CPU usage: 4.23%
+[2m2025-11-04T11:04:17.613473Z[0m [33m WARN[0m [2mruggine_server[0m[2m:[0m Errore nell'elaborare messaggio: Già registrato.
+[2m2025-11-04T11:04:24.641458Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m CPU usage: 0.97%
+[2m2025-11-04T11:04:34.637219Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m CPU usage: 3.12%
+[2m2025-11-04T11:04:36.606603Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Nuova connessione da: 127.0.0.1:49918
+[2m2025-11-04T11:04:40.443214Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Nuovo utente registrato: paolo (ID: 2)
+[2m2025-11-04T11:04:44.647117Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m CPU usage: 3.16%
+[2m2025-11-04T11:04:54.165112Z[0m [33m WARN[0m [2mruggine_server[0m[2m:[0m Errore nell'elaborare messaggio: Già registrato.
+[2m2025-11-04T11:04:54.640358Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m CPU usage: 5.52%
+[2m2025-11-04T11:05:04.649985Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m CPU usage: 1.08%
+[2m2025-11-04T11:05:14.635499Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m CPU usage: 1.81%
+[2m2025-11-04T11:05:24.635156Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m CPU usage: 1.32%
+[2m2025-11-04T11:05:34.648206Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m CPU usage: 1.01%
+[2m2025-11-04T11:05:44.447106Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Connessione chiusa: 127.0.0.1:49918
+[2m2025-11-04T11:05:44.447150Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Utente paolo disconnesso.
+[2m2025-11-04T11:05:44.648914Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m CPU usage: 1.45%
+[2m2025-11-04T11:05:46.149911Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Connessione chiusa: 127.0.0.1:52973
+[2m2025-11-04T11:05:46.149942Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Utente omar disconnesso.
+[2m2025-11-04T14:04:13.736729Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Avvio server Ruggine...
+[2m2025-11-04T14:04:13.737864Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Database inizializzato.
+[2m2025-11-04T14:04:13.738920Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Server WebSocket in ascolto su 127.0.0.1:4000
+[2m2025-11-04T14:04:14.549343Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m CPU usage: 11.26%
+[2m2025-11-04T14:04:29.977511Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Nuova connessione da: 127.0.0.1:64042
+[2m2025-11-04T14:05:30.889493Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Nuova connessione da: 127.0.0.1:57440
+[2m2025-11-04T14:06:01.690244Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Nuovo utente registrato: utenteA (ID: 3)
+[2m2025-11-04T14:06:07.471009Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Connessione chiusa: 127.0.0.1:57440
+[2m2025-11-04T14:06:07.471022Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Utente utenteA disconnesso.
+[2m2025-11-04T14:06:07.471437Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Connessione chiusa: 127.0.0.1:64042
+[2m2025-11-04T14:07:04.491733Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Avvio server Ruggine...
+[2m2025-11-04T14:07:04.492395Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Database inizializzato.
+[2m2025-11-04T14:07:04.493610Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Server WebSocket in ascolto su 127.0.0.1:4000
+[2m2025-11-04T14:07:04.805092Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m CPU usage: 7.76%
+[2m2025-11-04T14:07:36.532290Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Nuova connessione da: 127.0.0.1:52095
+[2m2025-11-04T14:07:48.471067Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Nuova connessione da: 127.0.0.1:61905
+[2m2025-11-04T14:09:04.807285Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m CPU usage: 2.48%
+[2m2025-11-04T14:11:04.792635Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m CPU usage: 2.07%
+[2m2025-11-04T14:12:48.631914Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Connessione chiusa: 127.0.0.1:52095
+[2m2025-11-04T14:12:49.801251Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Connessione chiusa: 127.0.0.1:61905
+[2m2025-11-04T14:13:36.223348Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Avvio server Ruggine...
+[2m2025-11-04T14:13:36.224499Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Database inizializzato.
+[2m2025-11-04T14:13:36.225888Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Server WebSocket in ascolto su 127.0.0.1:4000
+[2m2025-11-04T14:13:36.529610Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m CPU usage: 17.65%
+[2m2025-11-04T14:13:53.759449Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Nuova connessione da: 127.0.0.1:59077
+[2m2025-11-04T14:14:36.170778Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Connessione chiusa: 127.0.0.1:59077
+[2m2025-11-04T14:29:52.534005Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Avvio server Ruggine...
+[2m2025-11-04T14:29:52.535059Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Database inizializzato.
+[2m2025-11-04T14:29:52.536392Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Server WebSocket in ascolto su 127.0.0.1:4000
+[2m2025-11-04T14:29:52.832288Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m CPU usage: 14.28%
+[2m2025-11-04T14:29:59.500280Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Nuova connessione da: 127.0.0.1:61809
+[2m2025-11-04T14:31:06.521106Z[0m [33m WARN[0m [2mruggine_server[0m[2m:[0m Errore inserimento DB: UNIQUE constraint failed: users.username
+[2m2025-11-04T14:31:26.608788Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Nuovo utente registrato: pasquale (ID: 4)
+[2m2025-11-04T14:31:48.062727Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Nuova connessione da: 127.0.0.1:53004
+[2m2025-11-04T14:31:51.781397Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Nuovo utente registrato: ciro (ID: 5)
+[2m2025-11-04T14:31:52.836275Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m CPU usage: 0.97%
+[2m2025-11-04T14:32:08.813419Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Utente 'pasquale' ha creato il gruppo 'Napoli' (ID: 1)
+[2m2025-11-04T14:32:19.525475Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Invito inviato a 'ciro' per il gruppo 'Napoli'
+[2m2025-11-04T14:32:42.465472Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Utente 'ciro' si è unito al gruppo 1
+[2m2025-11-04T14:33:52.833496Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m CPU usage: 0.92%
+[2m2025-11-04T14:34:51.033670Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Utente 'pasquale' ha creato il gruppo 'Napoletaniveri' (ID: 2)
+[2m2025-11-04T14:35:00.529653Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Nuova connessione da: 127.0.0.1:52912
+[2m2025-11-04T14:35:07.040101Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Nuovo utente registrato: esposito (ID: 6)
+[2m2025-11-04T14:35:16.213668Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Invito inviato a 'esposito' per il gruppo 'Napoletaniveri'
+[2m2025-11-04T14:35:25.290324Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Utente 'esposito' si è unito al gruppo 2
+[2m2025-11-04T14:35:52.834421Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m CPU usage: 1.10%
+[2m2025-11-04T14:37:11.710217Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Invito inviato a 'esposito' per il gruppo 'Napoletaniveri'
+[2m2025-11-04T14:37:19.944476Z[0m [33m WARN[0m [2mruggine_server[0m[2m:[0m Errore nell'elaborare messaggio: UNIQUE constraint failed: group_members.user_id, group_members.group_id
+[2m2025-11-04T14:37:37.071062Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Connessione chiusa: 127.0.0.1:52912
+[2m2025-11-04T14:37:37.071107Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Utente esposito disconnesso.
+[2m2025-11-04T14:37:37.802180Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Connessione chiusa: 127.0.0.1:53004
+[2m2025-11-04T14:37:37.802216Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Utente ciro disconnesso.
+[2m2025-11-04T14:37:40.897731Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Connessione chiusa: 127.0.0.1:61809
+[2m2025-11-04T14:37:40.897770Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Utente pasquale disconnesso.

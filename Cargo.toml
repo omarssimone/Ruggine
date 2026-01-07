@@ -1,0 +1,10 @@
+[workspace]
+members = ["ruggine_server","ruggine_client","ruggine_common"]
+
+
+[profile.release]
+opt-level = "z"           # Ottimizza per la dimensione
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true              # Modificato: 'true' è la versione stabile ed efficace
