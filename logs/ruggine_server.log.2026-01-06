@@ -1,6 +1,0 @@
-[2m2026-01-06T19:31:10.576281Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Avvio server Ruggine...
-[2m2026-01-06T19:31:10.577866Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Database inizializzato.
-[2m2026-01-06T19:31:10.579257Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Server WebSocket in ascolto su 127.0.0.1:4000
-[2m2026-01-06T19:31:11.038102Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m CPU usage: 25.04%
-[2m2026-01-06T19:31:28.187630Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Nuova connessione da: 127.0.0.1:63156
-[2m2026-01-06T19:31:55.602949Z[0m [32m INFO[0m [2mruggine_server[0m[2m:[0m Connessione chiusa: 127.0.0.1:63156
