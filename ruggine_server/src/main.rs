@@ -7,7 +7,7 @@ use chrono::Utc;
 // NEW: Aggiunto per i timestamp
 use futures_util::stream::{SplitSink, SplitStream, StreamExt};
 use futures_util::SinkExt;
-use ruggine_common::{ClientMessage, ServerMessage};
+use ruggine_common::{ClientMessage, GroupInfo, ServerMessage};
 use rusqlite::{params, Connection, Result as DbResult};
 // rust
 use std::collections::HashMap;
@@ -494,6 +494,33 @@ async fn handle_client_message(
             broadcast_to_group(state.clone(), group_id, join_msg, None).await?;
         }
 
+        ClientMessage::ListGroups => {
+            let username = current_user
+                .as_ref()
+                .ok_or_else(|| anyhow!("Registrazione richiesta"))?;
+
+            let db = state.inner.db.lock().map_err(|e| anyhow!("{}", e))?;
+
+            let user_id: i64 = db.query_row(
+                "SELECT id FROM users WHERE username = ?1",
+                params![username], |row| row.get(0),
+            )?;
+
+            let mut stmt = db.prepare(
+                "SELECT g.id, g.name FROM groups g
+         JOIN group_members gm ON g.id = gm.group_id
+         WHERE gm.user_id = ?1"
+            )?;
+
+            let groups: Vec<GroupInfo> = stmt
+                .query_map(params![user_id], |row| {
+                    Ok(GroupInfo { id: row.get(0)?, name: row.get(1)? })
+                })?
+                .collect::<Result<_, _>>()?;
+
+            client_tx.send(ServerMessage::GroupList { groups })?;
+        }
+
         ClientMessage::SendMessage { group_id, content } => {
             let sender_username = current_user
                 .as_ref()
@@ -528,7 +555,7 @@ async fn handle_client_message(
                 content,
                 timestamp,
             };
-            broadcast_to_group(state.clone(), group_id, msg, None).await?;
+            broadcast_to_group(state.clone(), group_id, msg, Some(sender_username)).await?;
         }
 
         // === FASE 1: Nuovi handler per inviti basati su nome gruppo ===

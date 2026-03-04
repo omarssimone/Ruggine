@@ -1,497 +1,418 @@
-use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind},
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-};
-use futures_util::stream::{SplitSink, SplitStream};
-use futures_util::{SinkExt, StreamExt};
-use log::warn;
-use ratatui::{
-    backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout},
-    style::{Color, Modifier, Style},
-    text::Span,
-    widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
-    Frame, Terminal,
-};
-use ruggine_common::{ClientMessage, ServerMessage};
-use serde_json;
-use std::{
-    io::{self, Stdout},
-    time::Duration,
-};
+// ruggine_client/src/main.rs
+use eframe::egui;
+use ruggine_common::{ClientMessage, GroupInfo, ServerMessage};
 use tokio::sync::mpsc;
-// Import necessario per la funzione helper
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-// Esplicito per chiarezza
-use tokio_tungstenite::connect_async;
-use tokio_tungstenite::tungstenite::Message as WsMessage;
 
-/// Tipo alias per il terminale
-type Term = Terminal<CrosstermBackend<Stdout>>;
-
-/// Stato globale dell'applicazione client
-struct AppState {
-    input_buffer: String,
-    username: String,
-    messages: Vec<String>,
-    list_state: ListState,
-    is_registered: bool,
-}
-
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    // --- Canali di Comunicazione ---
-    // UI -> WS (Invia messaggi al server)
+fn main() -> eframe::Result<()> {
+    // Canali di comunicazione UI <-> WebSocket
     let (ui_to_ws_tx, ui_to_ws_rx) = mpsc::unbounded_channel::<ClientMessage>();
-    // WS -> UI (Riceve messaggi dal server)
     let (ws_to_ui_tx, ws_to_ui_rx) = mpsc::unbounded_channel::<ServerMessage>();
 
-    // --- Setup WebSocket in background ---
-    // spawn un task che mantiene la WS; non lo awaitiamo qui
-    tokio::spawn(async move {
-        if let Err(e) = websocket_task(ui_to_ws_rx, ws_to_ui_tx).await {
-            warn!("websocket_task terminato con errore: {:?}", e);
-        }
+    // Avvia tokio runtime in un thread separato
+    std::thread::spawn(move || {
+        tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(websocket_task(ui_to_ws_rx, ws_to_ui_tx));
     });
 
-    // --- Setup TUI ---
-    let mut terminal = init_terminal()?;
-
-    let mut app = AppState {
-        input_buffer: String::new(),
-        username: String::new(),
-        messages: vec![
-            "Benvenuto in Ruggine! Inserisci il tuo username per registrarti.".into(),
-            "Digita /help per vedere tutti i comandi disponibili.".into(),
-        ],
-        list_state: ListState::default(),
-        is_registered: false,
+    let options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_title("Ruggine Chat")
+            .with_inner_size([900.0, 600.0])
+            .with_min_inner_size([600.0, 400.0]),
+        ..Default::default()
     };
-    app.list_state.select(Some(0)); // Seleziona l'ultimo messaggio
 
-    // Esegui il loop principale della TUI
-    let res = run_app(&mut terminal, &mut app, ui_to_ws_tx, ws_to_ui_rx).await;
-
-    // Ripristina il terminale (anche se run_app fallisce)
-    if let Err(e) = restore_terminal(&mut terminal) {
-        // in genere vogliamo mostrare l'errore ma non panicare
-        eprintln!("Errore durante il ripristino del terminale: {:?}", e);
-    }
-
-    // Propaga eventuale errore di run_app
-    res.map_err(|e| e.into())
+    eframe::run_native(
+        "Ruggine Chat",
+        options,
+        Box::new(|_cc| Box::new(RuggineApp::new(ui_to_ws_tx, ws_to_ui_rx))),
+    )
 }
 
-/// Task che gestisce la connessione WebSocket
+// --- Stato dell'app ---
+
+struct RuggineApp {
+    // Canali
+    ui_to_ws_tx: mpsc::UnboundedSender<ClientMessage>,
+    ws_to_ui_rx: mpsc::UnboundedReceiver<ServerMessage>,
+
+    // Stato utente
+    username_input: String,
+    username: String,
+    is_registered: bool,
+
+    // Chat
+    messages: Vec<ChatMessage>,
+    input_buffer: String,
+
+    // Gruppi
+    groups: Vec<GroupInfo>,
+    active_group: Option<GroupInfo>,
+
+    // UI
+    connection_status: String,
+}
+
+struct ChatMessage {
+    sender: String,
+    content: String,
+    group_name: Option<String>,
+    group_id: Option<i64>,
+    is_system: bool,
+}
+
+impl RuggineApp {
+    fn new(
+        ui_to_ws_tx: mpsc::UnboundedSender<ClientMessage>,
+        ws_to_ui_rx: mpsc::UnboundedReceiver<ServerMessage>,
+    ) -> Self {
+        Self {
+            ui_to_ws_tx,
+            ws_to_ui_rx,
+            username_input: String::new(),
+            username: String::new(),
+            is_registered: false,
+            messages: vec![ChatMessage {
+                sender: "Sistema".into(),
+                content: "Benvenuto in Ruggine! Inserisci il tuo username per connetterti.".into(),
+                group_name: None,
+                group_id: None,
+                is_system: true,
+            }],
+            input_buffer: String::new(),
+            groups: Vec::new(),
+            active_group: None,
+            connection_status: "Connessione in corso...".into(),
+        }
+    }
+
+    fn send_message(&mut self) {
+        let content = self.input_buffer.trim().to_string();
+        if content.is_empty() { return; }
+        self.input_buffer.clear();
+
+        if content.starts_with('/') {
+            self.handle_command(&content);
+            return;
+        }
+
+        if let Some(ref group) = self.active_group.clone() {
+            self.messages.push(ChatMessage {
+                sender: format!("Tu"),
+                content: content.clone(),
+                group_name: Some(group.name.clone()),
+                group_id: Some(group.id),
+                is_system: false,
+            });
+            let _ = self.ui_to_ws_tx.send(ClientMessage::SendMessage {
+                group_id: group.id,
+                content,
+            });
+        } else {
+            self.push_system("❌ Nessun gruppo attivo. Crea uno con /create <nome>");
+        }
+    }
+
+    fn handle_command(&mut self, input: &str) {
+        let parts: Vec<&str> = input.split_whitespace().collect();
+        match parts[0] {
+            "/create" if parts.len() >= 2 => {
+                let name = parts[1..].join(" ");
+                let _ = self.ui_to_ws_tx.send(ClientMessage::CreateGroup { name });
+            }
+            "/invite" if parts.len() >= 3 => {
+                let username = parts[1].to_string();
+                let group = parts[2..].join(" ");
+                let _ = self.ui_to_ws_tx.send(ClientMessage::InviteUser { group, username });
+            }
+            "/accept" if parts.len() >= 2 => {
+                let group = parts[1..].join(" ");
+                let _ = self.ui_to_ws_tx.send(ClientMessage::AcceptInvite { group });
+            }
+            "/reject" if parts.len() >= 2 => {
+                let group = parts[1..].join(" ");
+                let _ = self.ui_to_ws_tx.send(ClientMessage::RejectInvite { group });
+            }
+            "/help" => {
+                self.push_system("Comandi:\n /create <nome> per creare un nuovo gruppo\n| /invite <user> <gruppo> per invitare l'utente <user> al gruppo <gruppo>\n | /accept <gruppo> per accettare l'invito al gruppo <gruppo>\n | /reject <gruppo> per rifiutare l'invito al gruppo <gruppo>");
+            }
+            _ => self.push_system(&format!("Comando sconosciuto: {}. Usa /help", parts[0])),
+        }
+    }
+
+    fn push_system(&mut self, msg: &str) {
+        self.messages.push(ChatMessage {
+            sender: "Sistema".into(),
+            content: msg.to_string(),
+            group_name: None,
+            group_id: None,
+            is_system: true,
+        });
+    }
+
+    fn process_server_messages(&mut self) {
+        while let Ok(msg) = self.ws_to_ui_rx.try_recv() {
+            match msg {
+                ServerMessage::Error { message } => {
+                    let status = message.clone();
+                    self.connection_status = status;
+                    self.push_system(&message);
+                }
+                ServerMessage::RegisterResponse { success, reason } => {
+                    if success {
+                        self.is_registered = true;
+                        self.push_system(&format!("✅ Connesso come '{}'", self.username));
+                        let _ = self.ui_to_ws_tx.send(ClientMessage::ListGroups);
+                    } else {
+                        self.push_system(&format!("❌ {}", reason.unwrap_or("Errore".into())));
+                        self.username.clear();
+                    }
+                }
+                ServerMessage::GroupList { groups } => {
+                    if groups.is_empty() {
+                        self.push_system("Nessun gruppo ancora. Usa /create <nome> per crearne uno.");
+                    }
+                    if self.active_group.is_none() {
+                        self.active_group = groups.first().cloned();
+                    }
+                    self.groups = groups;
+                }
+                ServerMessage::NewMessage { group_id, sender_username, content, .. } => {
+                    let group_name = self.groups.iter()
+                        .find(|g| g.id == group_id)
+                        .map(|g| g.name.clone())
+                        .unwrap_or_else(|| format!("Gruppo {}", group_id));
+                    self.messages.push(ChatMessage {
+                        sender: sender_username,
+                        content,
+                        group_name: Some(group_name),
+                        group_id: Some(group_id),
+                        is_system: false,
+                    });
+                }
+                ServerMessage::GroupCreated { id, name } => {
+                    self.push_system(&format!("✅ Gruppo '{}' creato (ID: {})", name, id));
+                    let group = GroupInfo { id, name };
+                    self.active_group = Some(group.clone());
+                    self.groups.push(group);
+                }
+                ServerMessage::InviteReceived { group_name, inviter_username, .. } => {
+                    self.push_system(&format!(
+                        "📩 Invito da '{}' per il gruppo '{}' → /accept {} oppure /reject {}",
+                        inviter_username, group_name, group_name, group_name
+                    ));
+                }
+                ServerMessage::JoinedGroup { group_id, group_name } => {
+                    self.push_system(&format!("✅ Unito al gruppo '{}'", group_name));
+                    let group = GroupInfo { id: group_id, name: group_name };
+                    self.active_group = Some(group.clone());
+                    self.groups.push(group);
+                }
+                ServerMessage::UserJoinedGroup { group_id, username } => {
+                    let group_name = self.groups.iter()
+                        .find(|g| g.id == group_id)
+                        .map(|g| g.name.clone())
+                        .unwrap_or_else(|| format!("{}", group_id));
+                    self.push_system(&format!("👤 '{}' si è unito a '{}'", username, group_name));
+                }
+                ServerMessage::InviteSent { group, username } => {
+                    self.push_system(&format!("✅ Invito inviato a '{}' per '{}'", username, group));
+                }
+                ServerMessage::InviteRejected { group } => {
+                    self.push_system(&format!("❌ Invito rifiutato per '{}'", group));
+                }
+            }
+        }
+    }
+}
+
+impl eframe::App for RuggineApp {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Processa messaggi dal server ad ogni frame
+        self.process_server_messages();
+
+        // Richiedi ridisegno continuo (necessario per ricevere messaggi in real-time)
+        ctx.request_repaint_after(std::time::Duration::from_millis(50));
+
+        // Schermata di login
+        if !self.is_registered {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.vertical_centered(|ui| {
+                    ui.add_space(180.0);
+                    ui.heading("🦀 Ruggine Chat");
+                    ui.add_space(20.0);
+                    ui.label(&self.connection_status);
+                    ui.add_space(20.0);
+
+                    let response = ui.add(
+                        egui::TextEdit::singleline(&mut self.username_input)
+                            .hint_text("Il tuo username...")
+                            .desired_width(250.0),
+                    );
+
+                    if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                        let username = self.username_input.trim().to_string();
+                        if !username.is_empty() {
+                            self.username = username.clone();
+                            let _ = self.ui_to_ws_tx.send(ClientMessage::Register { username });
+                        }
+                    }
+
+                    ui.add_space(10.0);
+                    if ui.button("Connetti").clicked() {
+                        let username = self.username_input.trim().to_string();
+                        if !username.is_empty() {
+                            self.username = username.clone();
+                            let _ = self.ui_to_ws_tx.send(ClientMessage::Register { username });
+                        }
+                    }
+                });
+            });
+            return;
+        }
+
+        // --- UI principale dopo login ---
+
+        // Pannello sinistro: lista gruppi
+        egui::SidePanel::left("groups_panel")
+            .resizable(false)
+            .exact_width(200.0)
+            .show(ctx, |ui| {
+                ui.add_space(8.0);
+                ui.heading("💬 Gruppi");
+                ui.separator();
+
+                for group in &self.groups.clone() {
+                    let is_active = self.active_group.as_ref().map(|g| g.id) == Some(group.id);
+                    let label = if is_active {
+                        format!("▶ {}", group.name)
+                    } else {
+                        format!("  {}", group.name)
+                    };
+
+                    if ui.selectable_label(is_active, &label).clicked() {
+                        self.active_group = Some(group.clone());
+                    }
+                }
+
+                ui.add_space(8.0);
+                ui.separator();
+                ui.small(format!("👤 {}", self.username));
+            });
+
+        // Pannello principale: messaggi + input
+        egui::CentralPanel::default().show(ctx, |ui| {
+            let active_name = self.active_group.as_ref()
+                .map(|g| g.name.clone())
+                .unwrap_or_else(|| "Nessun gruppo".into());
+
+            ui.horizontal(|ui| {
+                ui.heading(format!("# {}", active_name));
+            });
+            ui.separator();
+
+            // Area messaggi con scroll
+            let available = ui.available_height() - 50.0;
+            egui::ScrollArea::vertical()
+                .max_height(available)
+                .stick_to_bottom(true)
+                .show(ui, |ui| {
+                    let active_id = self.active_group.as_ref().map(|g| g.id);
+                    for msg in self.messages.iter().filter(|m| {
+                        m.is_system || m.group_id == active_id
+                    }) {
+                        if msg.is_system {
+                            ui.colored_label(egui::Color32::from_rgb(150, 150, 150), &msg.content);
+                        } else {
+                            ui.horizontal(|ui| {
+                                if let Some(ref gname) = msg.group_name {
+                                    ui.colored_label(egui::Color32::from_rgb(80, 80, 80), format!("[{}]", gname));
+                                }
+                                ui.colored_label(egui::Color32::from_rgb(100, 180, 255),
+                                                 format!("{}:", msg.sender));
+                                ui.label(&msg.content);
+                            });
+                        }
+                    }
+                });
+
+            ui.separator();
+
+            // Barra di input
+            ui.horizontal(|ui| {
+                let input_response = ui.add(
+                    egui::TextEdit::singleline(&mut self.input_buffer)
+                        .hint_text("Scrivi un messaggio o /help per i comandi...")
+                        .desired_width(ui.available_width() - 70.0),
+                );
+
+                let send_clicked = ui.button("Invia").clicked();
+                let enter_pressed = input_response.lost_focus()
+                    && ui.input(|i| i.key_pressed(egui::Key::Enter));
+
+                if send_clicked || enter_pressed {
+                    self.send_message();
+                    input_response.request_focus();
+                }
+            });
+        });
+    }
+}
+
+// --- WebSocket task (invariato) ---
 async fn websocket_task(
     mut ui_to_ws_rx: mpsc::UnboundedReceiver<ClientMessage>,
     ws_to_ui_tx: mpsc::UnboundedSender<ServerMessage>,
-) -> anyhow::Result<()> {
-    let url = "ws://127.0.0.1:4000";
-    let ws_to_ui_tx_clone = ws_to_ui_tx.clone();
-    let (ws_stream, _) = connect_async(url).await.map_err(|e| {
-        let _ = ws_to_ui_tx_clone.send(ServerMessage::Error {
-            message: format!("Connessione fallita: {}", e),
-        });
-        e
-    })?;
+) {
+    use futures_util::{SinkExt, StreamExt};
+    use tokio_tungstenite::{connect_async, tungstenite::Message as WsMessage};
 
-    // Dividi il WebSocket in sink e stream
+    let url = "ws://127.0.0.1:4000";
+
+    let (ws_stream, _) = match connect_async(url).await {
+        Ok(s) => s,
+        Err(e) => {
+            let _ = ws_to_ui_tx.send(ServerMessage::Error {
+                message: format!("Connessione fallita: {}", e),
+            });
+            return;
+        }
+    };
+
+    let _ = ws_to_ui_tx.send(ServerMessage::Error {
+        message: "Connesso al server!".into(),
+    });
+
     let (mut ws_tx, mut ws_rx) = ws_stream.split();
 
-    ws_to_ui_tx.send(ServerMessage::Error {
-        message: "Connesso al server!".into(),
-    })?;
-
-    // Task di invio (da UI -> WS)
     let send_task = tokio::spawn({
-        // let mut ws_tx = ws_tx; // ✅ Spostiamo la ownership nel task
         async move {
             while let Some(msg) = ui_to_ws_rx.recv().await {
                 if let Ok(text) = serde_json::to_string(&msg) {
-                    if ws_tx.send(WsMessage::Text(text)).await.is_err() {
-                        break; // errore -> esci
-                    }
+                    if ws_tx.send(WsMessage::Text(text)).await.is_err() { break; }
                 }
             }
         }
     });
 
-    // Task di ricezione (da WS -> UI)
     let recv_task = tokio::spawn({
         let ws_to_ui_tx = ws_to_ui_tx.clone();
         async move {
             while let Some(Ok(msg)) = ws_rx.next().await {
                 if let WsMessage::Text(text) = msg {
                     if let Ok(server_msg) = serde_json::from_str::<ServerMessage>(&text) {
-                        if ws_to_ui_tx.send(server_msg).is_err() {
-                            break;
-                        }
+                        if ws_to_ui_tx.send(server_msg).is_err() { break; }
                     }
                 }
             }
         }
     });
 
-    // Attendi che uno dei due termini
     tokio::select! {
         _ = send_task => {},
         _ = recv_task => {},
     }
 
-    let _ = ws_to_ui_tx.send(ServerMessage::Error {
-        message: "Disconnesso.".into(),
-    });
-
-    Ok(())
-}
-
-/// Loop principale della TUI
-async fn run_app(
-    term: &mut Term,
-    app: &mut AppState,
-    ui_to_ws_tx: mpsc::UnboundedSender<ClientMessage>,
-    mut ws_to_ui_rx: mpsc::UnboundedReceiver<ServerMessage>,
-) -> io::Result<()> {
-    loop {
-        // Disegna la UI
-        term.draw(|f| ui(f, app))?;
-
-        // Gestisci input (eventi)
-        // Controlla per max 100ms, poi ridisegna
-        let timeout = Duration::from_millis(100);
-
-        // Controlla prima i messaggi dal server (non bloccante)
-        while let Ok(msg) = ws_to_ui_rx.try_recv() {
-            handle_server_message(msg, app);
-        }
-
-        // Controlla input utente (bloccante per 'timeout')
-        if event::poll(timeout)? {
-            if let Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press {
-                    match key.code {
-                        KeyCode::Enter => {
-                            let input: String = app.input_buffer.drain(..).collect();
-                            let input = input.trim().to_string();
-                            if input.is_empty() {
-                                continue;
-                            }
-
-                            if !app.is_registered {
-                                // Logica di Registrazione
-                                app.username = input.clone();
-                                // Invia Register al server
-                                let _ =
-                                    ui_to_ws_tx.send(ClientMessage::Register { username: input });
-                            } else {
-                                // Logica Comandi e Messaggi
-                                if input.starts_with('/') {
-                                    // È un comando
-                                    handle_command(&input, app, &ui_to_ws_tx);
-                                } else {
-                                    // È un messaggio
-                                    app.messages.push(format!("[Tu]: {}", input));
-                                    // NOTA: Invia al gruppo 1 come da codice originale.
-                                    // Una UI migliore permetterebbe di selezionare il gruppo.
-                                    let _ = ui_to_ws_tx.send(ClientMessage::SendMessage {
-                                        group_id: 1, // Hardcoded
-                                        content: input,
-                                    });
-                                }
-                                // Scroll alla fine
-                                app.list_state
-                                    .select(Some(app.messages.len().saturating_sub(1)));
-                            }
-                        }
-                        KeyCode::Char(c) => {
-                            app.input_buffer.push(c);
-                        }
-                        KeyCode::Backspace => {
-                            app.input_buffer.pop();
-                        }
-                        KeyCode::Esc => {
-                            // Esci
-                            return Ok(());
-                        }
-                        KeyCode::Up => {
-                            let sel = app.list_state.selected().unwrap_or(0);
-                            let new = sel.saturating_sub(1);
-                            app.list_state.select(Some(new));
-                        }
-                        KeyCode::Down => {
-                            let sel = app.list_state.selected().unwrap_or(0);
-                            let new = sel.saturating_add(1);
-                            if new < app.messages.len() {
-                                app.list_state.select(Some(new));
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-            }
-        }
-    }
-}
-
-// --- NUOVA FUNZIONE: handle_command ---
-/// Analizza ed esegue i comandi locali (che iniziano con /)
-fn handle_command(
-    input: &str,
-    app: &mut AppState,
-    ui_to_ws_tx: &mpsc::UnboundedSender<ClientMessage>,
-) {
-    let parts: Vec<&str> = input.split_whitespace().collect();
-    if parts.is_empty() {
-        return;
-    }
-
-    match parts[0] {
-        "/create" => {
-            if parts.len() >= 2 {
-                let name = parts[1..].join(" ");
-                app.messages
-                    .push(format!("[Comando inviato]: Crea gruppo '{}'", name));
-                let _ = ui_to_ws_tx.send(ClientMessage::CreateGroup { name });
-            } else {
-                app.messages
-                    .push("[Errore]: Uso: /create <nome_gruppo>".into());
-            }
-        }
-        "/invite" => {
-            if parts.len() >= 3 {
-                let username_to_invite = parts[1].to_string();
-                let group_arg = parts[2..].join(" ");
-
-                // Prova prima come ID numerico (legacy), altrimenti come nome gruppo
-                if let Ok(group_id) = group_arg.parse::<i64>() {
-                    app.messages.push(format!(
-                        "[Comando inviato]: Invita {} al gruppo {}",
-                        username_to_invite, group_id
-                    ));
-                    let _ = ui_to_ws_tx
-                        .send(ClientMessage::InviteToGroup { username_to_invite, group_id });
-                } else {
-                    // Usa il nome del gruppo
-                    app.messages.push(format!(
-                        "[Comando inviato]: Invita {} al gruppo '{}'",
-                        username_to_invite, group_arg
-                    ));
-                    let _ = ui_to_ws_tx.send(ClientMessage::InviteUser {
-                        group: group_arg,
-                        username: username_to_invite,
-                    });
-                }
-            } else {
-                app.messages
-                    .push("[Errore]: Uso: /invite <username> <group_id o nome_gruppo>".into());
-            }
-        }
-        "/join" => {
-            if parts.len() >= 2 {
-                let group_arg = parts[1..].join(" ");
-
-                if let Ok(group_id) = group_arg.parse::<i64>() {
-                    app.messages.push(format!(
-                        "[Comando inviato]: Unisciti al gruppo {}",
-                        group_id
-                    ));
-                    let _ = ui_to_ws_tx.send(ClientMessage::JoinGroup { group_id });
-                } else {
-                    app.messages.push(format!(
-                        "[Comando inviato]: Accetta invito per il gruppo '{}'",
-                        group_arg
-                    ));
-                    let _ = ui_to_ws_tx.send(ClientMessage::AcceptInvite { group: group_arg });
-                }
-            } else {
-                app.messages.push("[Errore]: Uso: /join <group_id o nome_gruppo>".into());
-            }
-        }
-        "/accept" => {
-            if parts.len() >= 2 {
-                let group = parts[1..].join(" ");
-                app.messages.push(format!(
-                    "[Comando inviato]: Accetta invito per il gruppo '{}'",
-                    group
-                ));
-                let _ = ui_to_ws_tx.send(ClientMessage::AcceptInvite { group });
-            } else {
-                app.messages.push("[Errore]: Uso: /accept <nome_gruppo>".into());
-            }
-        }
-        "/reject" => {
-            if parts.len() >= 2 {
-                let group = parts[1..].join(" ");
-                app.messages.push(format!(
-                    "[Comando inviato]: Rifiuta invito per il gruppo '{}'",
-                    group
-                ));
-                let _ = ui_to_ws_tx.send(ClientMessage::RejectInvite { group });
-            } else {
-                app.messages.push("[Errore]: Uso: /reject <nome_gruppo>".into());
-            }
-        }
-        "/help" => {
-            app.messages.push("Comandi disponibili:".into());
-            app.messages.push("  /create <nome>       - Crea un nuovo gruppo".into());
-            app.messages.push("  /invite <user> <grp> - Invita un utente al gruppo".into());
-            app.messages.push("  /join <gruppo>       - Accetta invito (ID o nome)".into());
-            app.messages.push("  /accept <nome>       - Accetta invito per gruppo".into());
-            app.messages.push("  /reject <nome>       - Rifiuta invito per gruppo".into());
-            app.messages.push("  /help                - Mostra questo aiuto".into());
-        }
-        _ => {
-            app.messages
-                .push(format!("[Errore]: Comando '{}' sconosciuto. Usa /help.", parts[0]));
-        }
-    }
-}
-// --- FINE NUOVA FUNZIONE ---
-
-/// Gestisce i messaggi ricevuti dal server e aggiorna lo stato della UI
-fn handle_server_message(msg: ServerMessage, app: &mut AppState) {
-    match msg {
-        ServerMessage::RegisterResponse { success, reason } => {
-            if success {
-                app.is_registered = true;
-                let welcome_msg = match reason {
-                    Some(ref r) if r.contains("Bentornato") => {
-                        format!("👋 {} Loggato come '{}'. Digita /help per i comandi.", r, app.username)
-                    }
-                    _ => {
-                        format!("✅ Registrazione completata come '{}'. Digita /help per i comandi.", app.username)
-                    }
-                };
-                app.messages.push(welcome_msg);
-            } else {
-                app.messages.push(format!(
-                    "❌ Registrazione fallita: {}",
-                    reason.unwrap_or_else(|| "Errore sconosciuto".into())
-                ));
-                app.username.clear();
-            }
-        }
-        ServerMessage::Error { message } => {
-            app.messages.push(format!("[SERVER]: {}", message));
-        }
-        ServerMessage::NewMessage { group_id, sender_username, content, .. } => {
-            app.messages.push(format!(
-                "[Gruppo {}] {}: {}",
-                group_id, sender_username, content
-            ));
-        }
-        ServerMessage::InviteReceived { group_id, group_name, inviter_username } => {
-            app.messages.push(format!(
-                "📩 Ricevuto invito da '{}' per il gruppo '{}' (ID: {})",
-                inviter_username, group_name, group_id
-            ));
-            app.messages.push(format!(
-                "   → Accetta con: /accept {} oppure /join {}",
-                group_name, group_id
-            ));
-            app.messages.push(format!(
-                "   → Rifiuta con: /reject {}",
-                group_name
-            ));
-        }
-        // --- NUOVI MESSAGGI GESTITI ---
-        ServerMessage::UserJoinedGroup { group_id, username } => {
-            app.messages.push(format!(
-                "[Gruppo {}] L'utente '{}' si è unito.",
-                group_id, username
-            ));
-        }
-        ServerMessage::GroupCreated { id, name } => {
-            app.messages.push(format!(
-                "✅ Creato gruppo '{}' (ID: {}). Invita qualcuno! /invite <utente> {}",
-                name, id, name
-            ));
-        }
-        ServerMessage::InviteSent { group, username } => {
-            app.messages.push(format!(
-                "✅ Invito inviato a '{}' per il gruppo '{}'",
-                username, group
-            ));
-        }
-        ServerMessage::JoinedGroup { group_id, group_name } => {
-            app.messages.push(format!(
-                "✅ Ti sei unito al gruppo '{}' (ID: {}). Puoi ora inviare messaggi!",
-                group_name, group_id
-            ));
-        }
-        ServerMessage::InviteRejected { group } => {
-            app.messages.push(format!(
-                "❌ Hai rifiutato l'invito per il gruppo '{}'",
-                group
-            ));
-        }
-    }
-    // Auto-scroll alla fine
-    app.list_state
-        .select(Some(app.messages.len().saturating_sub(1)));
-}
-
-/// Disegna i widget della TUI
-fn ui(f: &mut Frame, app: &AppState) {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Min(1), Constraint::Length(3)].as_ref())
-        .split(f.size());
-
-    // Area Messaggi
-    let items: Vec<ListItem> = app.messages.iter().map(|m| ListItem::new(Span::raw(m))).collect();
-
-    let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title("Chat"))
-        .highlight_style(
-            Style::default()
-                .add_modifier(Modifier::BOLD)
-                .bg(Color::DarkGray),
-        );
-
-    // Per mantenere e aggiornare correttamente lo stato della lista,
-    // cloniamo lo stato, lo passiamo al render e poi lo riscriviamo.
-    let mut state = app.list_state.clone();
-    f.render_stateful_widget(list, chunks[0], &mut state);
-    // Non possiamo aggiornare app.list_state qui perché abbiamo solo &AppState
-    // (questa funzione riceve app immutabile). Lo stato è aggiornato nel loop principale.
-
-    // Area Input
-    let title = if app.is_registered {
-        format!("Input ({}):", app.username)
-    } else {
-        "Input (Registrazione):".into()
-    };
-
-    let input = Paragraph::new(app.input_buffer.as_str())
-        .style(Style::default())
-        .block(Block::default().borders(Borders::ALL).title(title));
-    f.render_widget(input, chunks[1]);
-
-    // Cursore
-    f.set_cursor(
-        // posizione x: inizio area input + 1 (bordo) + lunghezza buffer
-        chunks[1].x + app.input_buffer.len() as u16 + 1,
-        // posizione y: inizio area input + 1 (bordo)
-        chunks[1].y + 1,
-    );
-}
-
-// --- Funzioni Helper TUI ---
-
-fn init_terminal() -> io::Result<Term> {
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
-    let backend = CrosstermBackend::new(stdout);
-    Terminal::new(backend)
-}
-
-fn restore_terminal(term: &mut Term) -> io::Result<()> {
-    disable_raw_mode()?;
-    // riporta lo schermo alternativo e mostra il cursore
-    execute!(term.backend_mut(), LeaveAlternateScreen)?;
-    term.show_cursor()
+    let _ = ws_to_ui_tx.send(ServerMessage::Error { message: "Disconnesso dal server.".into() });
 }
