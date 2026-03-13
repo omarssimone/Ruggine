@@ -60,6 +60,7 @@ struct ChatMessage {
     group_name: Option<String>,
     group_id: Option<i64>,
     is_system: bool,
+    is_dm: bool,
 }
 
 impl RuggineApp {
@@ -79,6 +80,7 @@ impl RuggineApp {
                 group_name: None,
                 group_id: None,
                 is_system: true,
+                is_dm: false,
             }],
             input_buffer: String::new(),
             groups: Vec::new(),
@@ -104,6 +106,7 @@ impl RuggineApp {
                 group_name: Some(group.name.clone()),
                 group_id: Some(group.id),
                 is_system: false,
+                is_dm: false,
             });
             let _ = self.ui_to_ws_tx.send(ClientMessage::SendMessage {
                 group_id: group.id,
@@ -134,8 +137,42 @@ impl RuggineApp {
                 let group = parts[1..].join(" ");
                 let _ = self.ui_to_ws_tx.send(ClientMessage::RejectInvite { group });
             }
+            "/leave" if parts.len() >= 2 => {
+                let group = parts[1..].join(" ");
+                let _ = self.ui_to_ws_tx.send(ClientMessage::LeaveGroup { group });
+            }
+            "/leave" => {
+                // Senza argomenti: lascia il gruppo attivo (se presente)
+                if let Some(ref g) = self.active_group.clone() {
+                    let _ = self.ui_to_ws_tx.send(ClientMessage::LeaveGroup {
+                        group: g.name.clone(),
+                    });
+                } else {
+                    self.push_system("! Nessun gruppo attivo. Usa /leave <nome_gruppo>");
+                }
+            }
+            "/dm" if parts.len() >= 3 => {
+                let to_username = parts[1].to_string();
+                let content = parts[2..].join(" ");
+                // Mostra subito il messaggio inviato localmente
+                self.messages.push(ChatMessage {
+                    sender: format!("Tu → {}", to_username),
+                    content: content.clone(),
+                    group_name: None,
+                    group_id: None,
+                    is_system: false,
+                    is_dm: true,
+                });
+                let _ = self.ui_to_ws_tx.send(ClientMessage::DirectMessage {
+                    to_username,
+                    content,
+                });
+            }
+            "/dm" => {
+                self.push_system("❌ Uso: /dm <username> <messaggio>");
+            }
             "/help" => {
-                self.push_system("Comandi:\n /create <nome> per creare un nuovo gruppo\n| /invite <user> <gruppo> per invitare l'utente <user> al gruppo <gruppo>\n | /accept <gruppo> per accettare l'invito al gruppo <gruppo>\n | /reject <gruppo> per rifiutare l'invito al gruppo <gruppo>");
+                self.push_system("Comandi:\n/create <nome> per creare un nuovo gruppo\n/invite <user> <gruppo> per invitare l'utente <user> al gruppo <gruppo>\n/accept <gruppo> per accettare l'invito al gruppo <gruppo>\n/reject <gruppo> per rifiutare l'invito al gruppo <gruppo>\n/leave <gruppo> per lasciare il gruppo <gruppo>\n/dm <user> <messaggio> per mandare un messaggio privato a <user>");
             }
             _ => self.push_system(&format!("Comando sconosciuto: {}. Usa /help", parts[0])),
         }
@@ -148,6 +185,7 @@ impl RuggineApp {
             group_name: None,
             group_id: None,
             is_system: true,
+            is_dm: false,
         });
     }
 
@@ -189,6 +227,7 @@ impl RuggineApp {
                         group_name: Some(group_name),
                         group_id: Some(group_id),
                         is_system: false,
+                        is_dm: false,
                     });
                 }
                 ServerMessage::GroupCreated { id, name } => {
@@ -221,6 +260,42 @@ impl RuggineApp {
                 }
                 ServerMessage::InviteRejected { group } => {
                     self.push_system(&format!("❌ Invito rifiutato per '{}'", group));
+                }
+                ServerMessage::LeftGroup { group_id, group_name } => {
+                    self.push_system(&format!("✅ Hai lasciato '{}'", group_name));
+                    self.groups.retain(|g| g.id != group_id);
+                    if self.active_group.as_ref().map(|g| g.id) == Some(group_id) {
+                        self.active_group = self.groups.first().cloned();
+                    }
+                }
+                ServerMessage::UserLeftGroup { group_id, group_name, username } => {
+                    self.push_system(&format!("👤 '{}' ha lasciato '{}'", username, group_name));
+                }
+                ServerMessage::DirectMessageReceived { from_username, content, .. } => {
+                    self.messages.push(ChatMessage {
+                        sender: format!("DM da {}", from_username),
+                        content,
+                        group_name: None,
+                        group_id: None,
+                        is_system: false,
+                        is_dm: true,
+                    });
+                }
+                ServerMessage::DirectMessageResult { to_username, success, reason } => {
+                    if success {
+                        self.push_system(&format!("✅ Messaggio inviato a '{}'", to_username));
+                    } else {
+                        self.push_system(&format!(
+                            "❌ DM a '{}' fallito: {}",
+                            to_username,
+                            reason.unwrap_or("utente non trovato o offline".into())
+                        ));
+                        if let Some(pos) = self.messages.iter().rposition(|m| {
+                            m.is_dm && m.sender.ends_with(&to_username)
+                        }) {
+                            self.messages.remove(pos);
+                        }
+                    }
                 }
             }
         }
@@ -320,10 +395,19 @@ impl eframe::App for RuggineApp {
                 .show(ui, |ui| {
                     let active_id = self.active_group.as_ref().map(|g| g.id);
                     for msg in self.messages.iter().filter(|m| {
-                        m.is_system || m.group_id == active_id
+                        m.is_system || m.is_dm || m.group_id == active_id
                     }) {
                         if msg.is_system {
                             ui.colored_label(egui::Color32::from_rgb(150, 150, 150), &msg.content);
+                        } else if msg.is_dm {
+                            // DM: sfondo viola/rosa per distinguerli visivamente
+                            ui.horizontal(|ui| {
+                                ui.colored_label(
+                                    egui::Color32::from_rgb(200, 120, 255),
+                                    format!("✉ {}:", msg.sender),
+                                );
+                                ui.label(&msg.content);
+                            });
                         } else {
                             ui.horizontal(|ui| {
                                 if let Some(ref gname) = msg.group_name {
@@ -360,7 +444,7 @@ impl eframe::App for RuggineApp {
     }
 }
 
-// --- WebSocket task (invariato) ---
+// --- WebSocket task ---
 async fn websocket_task(
     mut ui_to_ws_rx: mpsc::UnboundedReceiver<ClientMessage>,
     ws_to_ui_tx: mpsc::UnboundedSender<ServerMessage>,

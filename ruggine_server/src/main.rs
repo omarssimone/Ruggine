@@ -810,6 +810,166 @@ async fn handle_client_message(
                 group: group.clone(),
             })?;
         }
+
+        ClientMessage::LeaveGroup { group } => {
+            let username = current_user
+                .as_ref()
+                .ok_or_else(|| anyhow!("Registrazione richiesta"))?;
+
+            // 1. Lock DB e verifica che il gruppo esista
+            let (group_id, member_usernames): (i64, Vec<String>) = {
+                let db = state
+                    .inner
+                    .db
+                    .lock()
+                    .map_err(|e| anyhow!("Lock DB error: {}", e))?;
+
+                // Recupera id del gruppo
+                let group_id: i64 = db.query_row(
+                    "SELECT id FROM groups WHERE name = ?1",
+                    params![&group],
+                    |row| row.get(0),
+                )?;
+
+                // Recupera id utente
+                let user_id: i64 = db.query_row(
+                    "SELECT id FROM users WHERE username = ?1",
+                    params![username],
+                    |row| row.get(0),
+                )?;
+
+                // Verifica che sia membro
+                let is_member: DbResult<i64> = db.query_row(
+                    "SELECT 1 FROM group_members WHERE group_id = ?1 AND user_id = ?2",
+                    params![group_id, user_id],
+                    |row| row.get(0),
+                );
+
+                if is_member.is_err() {
+                    client_tx.send(ServerMessage::Error {
+                        message: format!("Non sei membro del gruppo '{}'", group),
+                    })?;
+                    return Ok(());
+                }
+
+                // Rimuovi l'utente dal gruppo
+                db.execute(
+                    "DELETE FROM group_members WHERE group_id = ?1 AND user_id = ?2",
+                    params![group_id, user_id],
+                )?;
+
+                // Recupera gli altri membri rimasti nel gruppo
+                let mut stmt = db.prepare(
+                    "SELECT u.username FROM users u
+                 JOIN group_members gm ON u.id = gm.user_id
+                 WHERE gm.group_id = ?1",
+                )?;
+
+                let members: Vec<String> = stmt
+                    .query_map(params![group_id], |row| row.get(0))?
+                    .collect::<Result<_, _>>()?;
+
+                (group_id, members)
+            };
+
+            // 2. Notifica al client che ha lasciato il gruppo
+            client_tx.send(ServerMessage::LeftGroup {
+                group_id,
+                group_name: group.clone(),
+            })?;
+
+            // 3. Notifica gli altri membri ancora nel gruppo
+            let notify = ServerMessage::UserLeftGroup {
+                group_id,
+                group_name: group.clone(),
+                username: username.clone(),
+            };
+
+            let active = state
+                .inner
+                .active_users
+                .lock()
+                .map_err(|e| anyhow!("Lock error: {}", e))?;
+            for member in &member_usernames {
+                if let Some(member_tx) = active.get(member) {
+                    let _ = member_tx.send(notify.clone());
+                }
+            }
+
+            info!("User '{}' left group '{}'", username, group);
+        }
+
+        ClientMessage::DirectMessage { to_username, content } => {
+            let username = current_user
+                .as_ref()
+                .ok_or_else(|| anyhow!("Registrazione richiesta"))?;
+
+            // 1. Verifica che il destinatario esista nel database
+            let user_exists: bool = {
+                let db = state
+                    .inner
+                    .db
+                    .lock()
+                    .map_err(|e| anyhow!("Lock DB error: {}", e))?;
+
+                db.query_row(
+                    "SELECT COUNT(*) FROM users WHERE username = ?1",
+                    params![&to_username],
+                    |row| row.get::<_, i64>(0),
+                )
+                .map(|c| c > 0)
+                .unwrap_or(false)
+            };
+
+            if !user_exists {
+                client_tx.send(ServerMessage::DirectMessageResult {
+                    to_username: to_username.clone(),
+                    success: false,
+                    reason: Some(format!("L'utente '{}' non esiste", to_username)),
+                })?;
+                return Ok(());
+            }
+
+            // 2. Verifica se il destinatario è online e consegna il messaggio
+            let timestamp = Utc::now().timestamp();
+
+            let delivered: bool = {
+                let active = state
+                    .inner
+                    .active_users
+                    .lock()
+                    .map_err(|e| anyhow!("Lock error: {}", e))?;
+
+                if let Some(dest_tx) = active.get(&to_username) {
+                    let dm = ServerMessage::DirectMessageReceived {
+                        from_username: username.clone(),
+                        content: content.clone(),
+                        timestamp,
+                    };
+                    dest_tx.send(dm).is_ok()
+                } else {
+                    false
+                }
+            };
+
+            // 3. Rispondi al mittente con l'esito
+            if delivered {
+                info!("DM from '{}' to '{}' delivered", username, to_username);
+                client_tx.send(ServerMessage::DirectMessageResult {
+                    to_username: to_username.clone(),
+                    success: true,
+                    reason: None,
+                })?;
+            } else {
+                // Utente esiste nel DB ma non è connesso al momento
+                warn!("DM from '{}' to '{}': user offline", username, to_username);
+                client_tx.send(ServerMessage::DirectMessageResult {
+                    to_username: to_username.clone(),
+                    success: false,
+                    reason: Some(format!("'{}' non è attualmente connesso", to_username)),
+                })?;
+            }
+        }
     }
     Ok(())
 }

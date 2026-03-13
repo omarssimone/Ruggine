@@ -38,6 +38,15 @@ pub enum ClientMessage {
     RejectInvite {
         group: String,
     },
+    /// Lascia un gruppo di cui si è membri
+    LeaveGroup {
+        group: String,
+    },
+    /// Messaggio diretto a un singolo utente (deve esistere nel DB)
+    DirectMessage {
+        to_username: String,
+        content: String,
+    },
     /// Legacy: InviteToGroup con group_id numerico
     InviteToGroup {
         username_to_invite: String,
@@ -95,5 +104,29 @@ pub enum ServerMessage {
     },
     GroupList {
         groups: Vec<GroupInfo>,
+    },
+    /// Conferma che l'utente ha lasciato il gruppo
+    LeftGroup {
+        group_id: i64,
+        group_name: String,
+    },
+    /// Notifica agli altri membri che un utente ha lasciato il gruppo
+    UserLeftGroup {
+        group_id: i64,
+        group_name: String,
+        username: String,
+    },
+    /// Messaggio diretto ricevuto da un altro utente
+    DirectMessageReceived {
+        from_username: String,
+        content: String,
+        timestamp: i64,
+    },
+    /// Conferma che il DM è stato consegnato (o errore se utente non esiste/offline)
+    DirectMessageResult {
+        to_username: String,
+        success: bool,
+        /// None se success=true, Some("motivo") se success=false
+        reason: Option<String>,
     },
 }
