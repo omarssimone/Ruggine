@@ -1,6 +1,6 @@
 # 🦀 Ruggine: Un'app di chat in Rust
 
-### Gruppo #3
+### Progetto per il corso Programmazione di Sistema del Politecnico di Torino, a.a. 2025-26
 
 <span style="color: grey"> Omar Simone (343432) - Giulia Cristina Varga (349542)</span>
 
